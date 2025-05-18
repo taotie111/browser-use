@@ -18,7 +18,7 @@ from langchain_core.messages import (
 	HumanMessage,
 	SystemMessage,
 )
-
+from langchain_google_genai import ChatGoogleGenerativeAI
 # from lmnr.sdk.decorators import observe
 from pydantic import BaseModel, ValidationError
 
@@ -690,6 +690,7 @@ class Agent(Generic[Context]):
 
 	@time_execution_async('--get_next_action (agent)')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
+		print('get_next_action')
 		"""Get next action from LLM based on current state"""
 		input_messages = self._convert_input_messages(input_messages)
 
@@ -712,6 +713,7 @@ class Agent(Generic[Context]):
 				raise ValueError('Could not parse response.')
 
 		elif self.tool_calling_method is None:
+			print('Using None for tool calling method')
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
 			try:
 				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
@@ -722,6 +724,7 @@ class Agent(Generic[Context]):
 				raise LLMException(401, 'LLM API call failed') from e
 
 		else:
+			print('Using function calling for tool calling method')
 			logger.debug(f'Using {self.tool_calling_method} for {self.chat_model_library}')
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
@@ -1332,7 +1335,10 @@ class Agent(Generic[Context]):
 		test_answer = 'paris'
 		try:
 			# dont convert this to async! it *should* block any subsequent llm calls from running
+			print(response.content)
+			print('HTTP_PROXY:', os.environ['HTTP_PROXY'])
 			response = self.llm.invoke([HumanMessage(content=test_prompt)])
+			print('response:', response)
 			response_text = str(response.content).lower()
 
 			if test_answer in response_text:
