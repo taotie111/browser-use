@@ -32,13 +32,13 @@ browser = Browser(
 
 async def run_search():
 	agent = Agent(
-		task="""1. 打开网址https://www.bilibili.com/
-		2. 搜索莲花池相关内容
-		3. 点开最新视频
-		4. 查看下方评论
-		5. 总结评论内容
-		6. 生成一段关于莲花池的介绍""",
+		task="""1. 打开网址https://slgcjg.wzsly.cn/login?redirect=/screen/homePage
+		2. 输入手机号 19975261382
+		3. 输入密码 114477
+		4. 查看有什么可以做的
+		5. 点开一个页面  """,
 		llm=llm,
+		planner_llm=llm,
 		max_actions_per_step=4,
 		browser=browser,
 	)
