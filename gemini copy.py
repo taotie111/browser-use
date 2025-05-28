@@ -24,6 +24,7 @@ llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash-exp', api_key=SecretStr(api
 
 browser_session = BrowserSession(
 	browser_profile=BrowserProfile(
+		headless=False,
 		viewport_expansion=0,
 		user_data_dir='~/.config/browseruse/profiles/default',
 	)

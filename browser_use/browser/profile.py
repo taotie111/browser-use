@@ -337,7 +337,7 @@ class BrowserContextArgs(BaseModel):
 	proxy: ProxySettings | None = None
 	permissions: list[str] = Field(
 		default_factory=lambda: ['clipboard-read', 'clipboard-write', 'notifications'],
-		description='Browser permissions to grant.',
+		description='Browser permissions to grant (see playwright docs for valid permissions).',
 		# clipboard is for google sheets and pyperclip automations
 		# notifications are to avoid browser fingerprinting
 	)
@@ -546,30 +546,32 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# ... extends options defined in:
 	# BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs, BrowserConnectArgs
 
+	# do something like this someday when we need to store these in a DB
 	# id: str = Field(default_factory=uuid7str)
 	# label: str = 'default'
 
 	# custom options we provide that aren't native playwright kwargs
 	disable_security: bool = Field(default=False, description='Disable browser security features.')
 	deterministic_rendering: bool = Field(default=False, description='Enable deterministic rendering flags.')
-	allowed_domains: list[str] | None = Field(default=None, description='List of allowed domains for navigation.')
+	allowed_domains: list[str] | None = Field(
+		default=None,
+		description='List of allowed domains for navigation e.g. ["*.google.com", "https://example.com", "chrome-extension://*"]',
+	)
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 	window_size: ViewportSize | None = Field(
 		default=None,
 		description='Window size to use for the browser when headless=False.',
 	)
-	window_height: int | None = Field(
-		default=None, description='DEPRECATED, use window_size["height"] instead', deprecated=True, exclude=True
-	)
-	window_width: int | None = Field(
-		default=None, description='DEPRECATED, use window_size["width"] instead', deprecated=True, exclude=True
-	)
+	window_height: int | None = Field(default=None, description='DEPRECATED, use window_size["height"] instead', exclude=True)
+	window_width: int | None = Field(default=None, description='DEPRECATED, use window_size["width"] instead', exclude=True)
 	window_position: ViewportSize | None = Field(
 		default_factory=lambda: {'width': 0, 'height': 0},
 		description='Window position to use for the browser x,y from the top left when headless=False.',
 	)
 
 	# --- Page load/wait timings ---
+	default_navigation_timeout: float | None = Field(default=None, description='Default page navigation timeout.')
+	default_timeout: float | None = Field(default=None, description='Default playwright call timeout.')
 	minimum_wait_page_load_time: float = Field(default=0.25, description='Minimum time to wait before capturing page state.')
 	wait_for_network_idle_page_load_time: float = Field(default=0.5, description='Time to wait for network idle.')
 	maximum_wait_page_load_time: float = Field(default=5.0, description='Maximum time to wait for page load.')
@@ -731,6 +733,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			self.window_size = self.window_size or display_size or ViewportSize(width=1280, height=1100)
 			self.no_viewport = True if self.no_viewport is None else self.no_viewport
 			self.viewport = None if self.no_viewport else self.viewport
+
+			# Auto-inherit DISPLAY environment variable for headful mode
+			if 'DISPLAY' in os.environ and 'DISPLAY' not in self.env:
+				self.env['DISPLAY'] = os.environ['DISPLAY']
 
 		# automatically setup viewport if any config requires it
 		use_viewport = self.headless or self.viewport or self.device_scale_factor

@@ -1,2 +1,3 @@
-2025/05/23-22:27:33.088 41d0 Creating DB H:\code\browser-use\my_user_data_dir\Default\GCM Store\Encryption since it was missing.
-2025/05/23-22:27:33.100 41d0 Reusing MANIFEST H:\code\browser-use\my_user_data_dir\Default\GCM Store\Encryption/MANIFEST-000001
+2025/05/26-21:04:11.216 43fc Reusing MANIFEST H:\code\browser-use\my_user_data_dir\Default\GCM Store\Encryption/MANIFEST-000001
+2025/05/26-21:04:11.216 43fc Recovering log #3
+2025/05/26-21:04:11.217 43fc Reusing old log H:\code\browser-use\my_user_data_dir\Default\GCM Store\Encryption/000003.log 
