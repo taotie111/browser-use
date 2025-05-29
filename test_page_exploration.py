@@ -1,14 +1,14 @@
 import asyncio
 import pytest
 from pathlib import Path
-from ..browser_use.browser.session import BrowserSession, BrowserProfile
-from ..browser_use.workflow.page_exploration import PageExplorationWorkflow
+from browser_use.browser.session import BrowserSession, BrowserProfile
+from page_exploration import PageExplorationWorkflow
 
 @pytest.mark.asyncio
 async def test_page_exploration():
     # Setup browser session
     profile = BrowserProfile(
-        allowed_domains=["www.baidu.com"],  # Add domains you want to test
+        allowed_domains=["https://www.baidu.com"],  # Add domains you want to test
         headless=False  # Set to True for headless mode
     )
     browser_session = BrowserSession(browser_profile=profile)
@@ -20,7 +20,7 @@ async def test_page_exploration():
         
         # Run exploration
         result = await workflow.run(
-            start_url="www.baidu.com",
+            start_url="https://www.baidu.com",
             max_depth=2
         )
         

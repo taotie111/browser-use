@@ -17,10 +17,10 @@ class PageNode:
     url: str
     title: str
     parent_url: Optional[str]
-    clickable_elements: list[DOMHistoryElement]
+    clickable_elements: list['DOMHistoryElement']  # Forward reference for type hinting
     notes: dict[str, str]  # Element index -> note
     timestamp: str
-    
+
 @dataclass
 class ExplorationResult:
     """Results of the page exploration"""
@@ -173,11 +173,34 @@ class PageExplorationWorkflow:
         
         # Save raw data
         data = {
-            "pages": {url: page.__dict__ for url, page in self.pages.items()},
+            "pages": {url: self._convert_page_to_serializable(page) for url, page in self.pages.items()},  # New Start
             "tree_structure": self.tree_structure
         }
+        print("Data structure before JSON serialization:")
+        print(self.tree_structure)  # Print the formatted JSON string
+        print(self.pages)  # P
         data_path = self.output_dir / "exploration_data.json"
         data_path.write_text(json.dumps(data, indent=2))
+        
+    def _convert_page_to_serializable(self, page: PageNode) -> dict:  # New Start
+        """Convert PageNode to a serializable format."""
+        return {
+            "url": page.url,
+            "title": page.title,
+            "parent_url": page.parent_url,
+            "clickable_elements": [self._convert_history_element_to_dict(elem) for elem in page.clickable_elements],  # New Start
+            "notes": page.notes,
+            "timestamp": page.timestamp
+        }  # New End
+
+    def _convert_history_element_to_dict(self, element: DOMHistoryElement) -> dict:  # New Start
+        """Convert DOMHistoryElement to a serializable format."""
+        return {
+            "tag_name": element.tag_name,
+            "attributes": element.attributes,
+            "highlight_index": element.highlight_index,
+            # Add other necessary fields for serialization here
+        }  # New End
         
     async def run(self, start_url: str, max_depth: int = 3) -> ExplorationResult:
         """
