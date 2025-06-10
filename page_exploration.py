@@ -9,8 +9,12 @@ from PIL import Image
 import io
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
+from playwright.async_api import TimeoutError
 # 新的推荐导入方式
 from langchain_openai import ChatOpenAI
+from google.api_core.exceptions import FailedPrecondition
+from langchain_deepseek import ChatDeepSeek
+import os
 
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.dom.history_tree_processor.view import DOMHistoryElement
@@ -73,7 +77,54 @@ class PageExplorationWorkflow:
         self.pages: dict[str, PageNode] = {}
         self.tree_structure: dict[str, list[str]] = {}
         self.llm = llm
+        self.llm_switched_to_deepseek = False
         
+    async def _invoke_llm(self, messages: List[HumanMessage]):
+        """
+        purpose: Invokes the language model, with a fallback from Gemini to DeepSeek if a location-based error occurs.
+        params:
+            messages (List[HumanMessage]): The list of messages to send to the LLM.
+        returns:
+            The response from the language model.
+        """
+        try:
+            return await self.llm.ainvoke(messages)
+        except FailedPrecondition as e:
+            if "User location is not supported" in str(e) and not self.llm_switched_to_deepseek:
+                print("Gemini API location not supported, attempting to switch to DeepSeek...")
+                api_key = os.getenv("DEEPSEEK_API_KEY")
+                if not api_key:
+                    print("DEEPSEEK_API_KEY environment variable not found. Cannot switch LLM.")
+                    raise e
+                
+                self.llm = ChatDeepSeek(
+                    model="deepseek-chat", 
+                    api_key=api_key
+                )
+                self.llm_switched_to_deepseek = True
+                print("Successfully switched to DeepSeek model.")
+                return await self.llm.ainvoke(messages)
+            else:
+                raise e
+
+    def _extract_json_from_llm_response(self, content: str) -> str:
+        """
+        purpose: Extracts a JSON string from the LLM's response, which may be wrapped in markdown code blocks.
+        params:
+            content (str): The string content from the LLM response.
+        returns:
+            str: The extracted JSON string.
+        """
+        # Handle case where the response is wrapped in ```json ... ```
+        if "```json" in content:
+            return content.split("```json")[1].split("```")[0].strip()
+        # Handle case where the response is wrapped in ``` ... ```
+        elif "```" in content:
+            # This will take the content from the first ``` to the second ```
+            return content.split("```")[1].strip()
+        # Otherwise, assume the response is the JSON content itself
+        return content
+
     def _is_important_element(self, element: DOMElementNode) -> bool:
         """Determine if a non-clickable element is important enough to include"""
         important_tags = {'h1', 'h2', 'h3', 'form', 'nav', 'main', 'header', 'footer'}
@@ -101,7 +152,7 @@ class PageExplorationWorkflow:
     async def _analyze_element_with_llm(self, 
                                       element: DOMElementNode, 
                                       page_context: str,
-                                      surrounding_elements: List[DOMElementNode]) -> ElementAnalysis:
+                                      surrounding_elements: List[DOMElementNode]) -> Optional[ElementAnalysis]:
         """Use LLM to analyze a single element in context"""
         
         # Prepare element context
@@ -124,30 +175,41 @@ class PageExplorationWorkflow:
         # Create prompt for LLM
         prompt = f"""Analyze this web page element in context:
 
-Element: {json.dumps(element_info, indent=2)}
+                    Element: {json.dumps(element_info, indent=2)}
 
-Page Context: {page_context}
+                    Page Context: {page_context}
 
-Surrounding Elements: {json.dumps(surrounding_context, indent=2)}
+                    Surrounding Elements: {json.dumps(surrounding_context, indent=2)}
 
-Analyze the element and provide:
-1. Element's purpose
-2. Possible user interactions
-3. Importance (0-1 score)
-4. Related elements
-5. Interaction hints
+                    Analyze the element and provide:
+                    1. Element's purpose
+                    2. Possible user interactions
+                    3. Importance (0-1 score)
+                    4. Related elements
+                    5. Interaction hints
 
-Format your response as JSON with these keys:
-- purpose: string
-- possible_actions: list of strings
-- importance_score: float
-- related_elements: list of strings
-- interaction_hints: list of strings
-"""
-
+                    Format your response as JSON with these keys:
+                    - purpose: string
+                    - possible_actions: list of strings
+                    - importance_score: float
+                    - related_elements: list of strings
+                    - interaction_hints: list of strings
+                """
         # Get LLM analysis
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        analysis = json.loads(response.content)
+        response = await self._invoke_llm([HumanMessage(content=prompt)])
+        print(response, "response")
+        json_content = self._extract_json_from_llm_response(response.content)
+        try:
+            analysis = json.loads(json_content)
+        except json.JSONDecodeError:
+            error_dir = self.output_dir / "llm_json_errors"
+            error_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().isoformat().replace(":", "-").replace(".", "-")
+            error_file = error_dir / f"element_analysis_error_{ts}.json"
+            error_file.write_text(json_content)
+            print(f"Failed to decode JSON for element analysis. Content saved to {error_file}")
+            print(f"Problematic JSON content was: {json_content}")
+            return None
         
         return ElementAnalysis(
             element_id=str(element.highlight_index),
@@ -162,7 +224,7 @@ Format your response as JSON with these keys:
     async def _analyze_page_purpose(self, 
                                   page_elements: list[DOMHistoryElement], 
                                   screenshot: str,
-                                  analyzed_elements: dict[str, ElementAnalysis]) -> PagePurpose:
+                                  analyzed_elements: dict[str, ElementAnalysis]) -> Optional[PagePurpose]:
         """Enhanced page purpose analysis using LLM"""
         
         # Prepare page context
@@ -195,8 +257,19 @@ Format your response as JSON with these keys:
             - key_interaction_points: list of strings
             """
 
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        analysis = json.loads(response.content)
+        response = await self._invoke_llm([HumanMessage(content=prompt)])
+        json_content = self._extract_json_from_llm_response(response.content)
+        try:
+            analysis = json.loads(json_content)
+        except json.JSONDecodeError:
+            error_dir = self.output_dir / "llm_json_errors"
+            error_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().isoformat().replace(":", "-").replace(".", "-")
+            error_file = error_dir / f"page_purpose_error_{ts}.json"
+            error_file.write_text(json_content)
+            print(f"Failed to decode JSON for page purpose analysis. Content saved to {error_file}")
+            print(f"Problematic JSON content was: {json_content}")
+            return None
         
         return PagePurpose(
             main_purpose=analysis['main_purpose'],
@@ -216,7 +289,10 @@ Format your response as JSON with these keys:
         page = await self.browser_session.get_current_page()
         if page.url != url:
             await page.goto(url)
-            await page.wait_for_load_state("networkidle")
+            try:
+                await page.wait_for_load_state("networkidle")
+            except TimeoutError:
+                print(f"Timeout waiting for page {url} to be idle. Continuing with current state.")
             
         state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
         if not state_summary:
@@ -239,7 +315,8 @@ Format your response as JSON with these keys:
                     f"Page title: {await page.title()}\nURL: {url}",
                     surrounding_elements
                 )
-                analyzed_elements[str(idx)] = analysis
+                if analysis:
+                    analyzed_elements[str(idx)] = analysis
 
         # Separate elements based on analysis
         clickable_elements = []
@@ -249,8 +326,9 @@ Format your response as JSON with these keys:
             if isinstance(element, DOMElementNode):
                 history_element = self._convert_to_history_element(element)
                 analysis = analyzed_elements.get(str(idx))
-                
-                if element.is_clickable or (analysis and analysis.importance_score > 0.7):
+                is_clickable = getattr(element, 'is_clickable', False)
+
+                if is_clickable or (analysis and analysis.importance_score > 0.7):
                     clickable_elements.append(history_element)
                 elif analysis and analysis.importance_score > 0.4:
                     selected_elements.append(history_element)

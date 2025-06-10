@@ -12,6 +12,9 @@ from pydantic import SecretStr
 async def test_page_exploration():
     # Set OpenAI API key
     # os.environ["OPENAI_API_KEY"] = "your-api-key-here"  # 替换为你的 API key
+    # fix start
+    # os.environ["DEEPSEEK_API_KEY"] = "your-deepseek-api-key-here"
+    # fix end
     os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7897'  # 例如 'http://127.0.0.1:1080'
     os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7897'
 
